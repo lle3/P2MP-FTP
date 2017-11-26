@@ -20,7 +20,7 @@ prob = 0.0
 HOST = "localhost"
 
 # Last received sequence number
-last_seq = 0
+last_seq = -1
 
 # File for writing
 f = None
@@ -35,14 +35,14 @@ def bit_add(num1, num2):
     return (num_sum & 0xffff) + (num_sum >> 16)
 
 
-def checksum(data):
+def checksum(d):
     """
     Computes checksum
     """
 
     chk_sum = 0
-    for i in range(0, len(data), 2):
-        tmp = data[i] + (data[i+1] << 8)
+    for i in range(0, len(d), 2):
+        tmp = d[i] + (d[i+1] << 8)
         chk_sum = bit_add(chk_sum, tmp)
         return ~chk_sum & 0xffff
 
@@ -97,22 +97,22 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
 
         print(data)
 
-        seq_num, chk_sum, data_type, data = struct.unpack(">LHH%ds" % (len(data) - 8), data)
+        seq_num, chk_sum, data_type, msg = struct.unpack(">LHH%ds" % (len(data) - 8), data)
 
         socket = self.request[1]
+
         print("seq: " + str(seq_num) + "\n")
         print("check: " + str(chk_sum) + "\n")
         print("type: " + str(data_type) + "\n")
-        print("data: " + str(data) + "\n")
+        print("msg: " + str(msg) + "\n")
 
         if (random.uniform(0,1) > prob):
-            if (chk_sum == checksum(data)):
-                print("CHECK SUCCESS\n")
+            if (chk_sum == checksum(msg)):
                 global last_seq
                 if (seq_num == (last_seq + 1)):
                     last_seq += 1
-                    global f
-                    f.write(data.decode("utf-8"))
+                    f.write(msg.decode("utf-8"))
+
                 ack = ACK((last_seq).to_bytes(4, byteorder='big'))
                 socket.sendto(ack.to_bits(), self.client_address)
 
