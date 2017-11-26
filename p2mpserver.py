@@ -1,11 +1,15 @@
 import sys, socketserver, struct, random
 
+
+
 __author__ = "Stephen Worley"
 __credits__ = ["Stephen Worley", "Louis Le"]
 __license__ = "GPL"
 __maintainer__ = "Stephen Worley"
 __email__ = "sworley1995@gmail.com"
 __status__ = "Development"
+
+
 
 # Port number
 port = 0
@@ -115,7 +119,6 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
 
                 ack = ACK((last_seq).to_bytes(4, byteorder='big'))
                 socket.sendto(ack.to_bits(), self.client_address)
-
 
 
 def main():
