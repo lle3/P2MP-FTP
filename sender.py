@@ -1,3 +1,23 @@
+def bit_add(num1, num2):
+    """
+    Adds bytes together with carryover
+    """
+
+    num_sum = num1 + num2
+    return (num_sum & 0xffff) + (num_sum >> 16)
+
+
+def checksum(data):
+    """
+    Computes checksum
+    """
+
+    chk_sum = 0
+    for i in range(0, len(data), 2):
+        tmp = data[i] + (data[i+1] << 8)
+        chk_sum = bit_add(chk_sum, tmp)
+        return ~chk_sum & 0xffff
+
 
 
 class Header():
@@ -46,16 +66,18 @@ import socket
 import sys
 
 HOST, PORT = "localhost", 9999
+string = "This is a test".encode()
 
-test_head = Header(b'\x00\x00\x00\x00', b'\xff\xf1')
+test_head = Header(b'\x00\x00\x00\x00', checksum(string).to_bytes(2, byteorder='big'))
 
 # SOCK_DGRAM is the socket type to use for UDP sockets
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 data = test_head.to_bits()
+data.extend(string)
 # As you can see, there is no connect() call; UDP has no connections.
 # Instead, data is directly sent to the recipient via sendto().
-sock.sendto(bytes(test_head.to_bits()), (HOST, PORT))
+sock.sendto(bytes(data), (HOST, PORT))
 received = sock.recv(1024)
 
 

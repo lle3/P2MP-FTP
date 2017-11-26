@@ -8,13 +8,13 @@ __email__ = "sworley1995@gmail.com"
 __status__ = "Development"
 
 # Port number
-PORT = 0
+port = 0
 
 # File store name
-F_NAME = ""
+f_name = ""
 
 # Probability of loss
-PROB = 0.0
+prob = 0.0
 
 # Host for server
 HOST = "localhost"
@@ -24,6 +24,28 @@ last_seq = 0
 
 # File for writing
 f = None
+
+
+def bit_add(num1, num2):
+    """
+    Adds bytes together with carryover
+    """
+
+    num_sum = num1 + num2
+    return (num_sum & 0xffff) + (num_sum >> 16)
+
+
+def checksum(data):
+    """
+    Computes checksum
+    """
+
+    chk_sum = 0
+    for i in range(0, len(data), 2):
+        tmp = data[i] + (data[i+1] << 8)
+        chk_sum = bit_add(chk_sum, tmp)
+        return ~chk_sum & 0xffff
+
 
 
 class ACK():
@@ -60,31 +82,11 @@ class ACK():
         return bits
 
 
+
 class MyUDPHandler(socketserver.BaseRequestHandler):
     """
     UDP Request Handler
     """
-
-    def bit_add(num1, num2):
-        """
-        Adds bytes together with carryover
-        """
-
-        num_sum = num1 + num2
-        return (num_sum & 0xffff) + (num_sum >> 16)
-
-
-    def checksum(data):
-        """
-        Computes checksum
-        """
-
-        chk_sum = 0
-        for i in range(0, len(data), 2):
-            tmp = msg[i] + (msg[i+1] << 8)
-            chk_sum = carry_around_add(chk_sum, tmp)
-            return ~chk_sum & 0xffff
-
 
     def handle(self):
         """
@@ -93,18 +95,23 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
 
         data = self.request[0].strip()
 
+        print(data)
+
         seq_num, chk_sum, data_type, data = struct.unpack(">LHH%ds" % (len(data) - 8), data)
 
         socket = self.request[1]
         print("seq: " + str(seq_num) + "\n")
         print("check: " + str(chk_sum) + "\n")
         print("type: " + str(data_type) + "\n")
-        print(data)
+        print("data: " + str(data) + "\n")
 
-        if (random.uniform(0,1) > p):
+        if (random.uniform(0,1) > prob):
             if (chk_sum == checksum(data)):
+                print("CHECK SUCCESS\n")
+                global last_seq
                 if (seq_num == (last_seq + 1)):
                     last_seq += 1
+                    global f
                     f.write(data.decode("utf-8"))
                 ack = ACK((last_seq).to_bytes(4, byteorder='big'))
                 socket.sendto(ack.to_bits(), self.client_address)
@@ -113,28 +120,33 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
 
 def main():
     """
-    ain method
+    Main method
 
     """
 
+    global port
+    global f_name
+    global prob
+    global f
+
     try:
-        PORT = int(sys.argv[1])
-        F_NAME = sys.argv[2]
-        PROB = float(sys.argv[3])        
+        port = int(sys.argv[1])
+        f_name = sys.argv[2]
+        prob = float(sys.argv[3])        
 
     except:
         print("Error in command line arguments.\
                 \nShould be in the form 'p2mpserver port# file-name p'\n")
 
     try:
-        f = open(F_NAME, 'w')
+        f = open(f_name, 'w')
 
     except IOError:
-        print("Error opening file: " + F_NAME + "\n")
+        print("Error opening file: " + f_name + "\n")
 
 
     try:
-        server = socketserver.UDPServer((HOST, PORT), MyUDPHandler)
+        server = socketserver.UDPServer((HOST, port), MyUDPHandler)
         server.serve_forever()
     except(KeyboardInterrupt, SystemExit):
         f.close()
