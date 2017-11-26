@@ -70,8 +70,8 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
         Adds bytes together with carryover
         """
 
-	num_sum = num1 + num2
-	return (num_sum & 0xffff) + (num_sum >> 16)
+        num_sum = num1 + num2
+        return (num_sum & 0xffff) + (num_sum >> 16)
 
 
     def checksum(data):
@@ -79,11 +79,11 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
         Computes checksum
         """
 
-	chk_sum = 0
-	for i in range(0, len(data), 2):
-	    tmp = msg[i] + (msg[i+1] << 8)
-	    chk_sum = carry_around_add(chk_sum, tmp)
-	return ~chk_sum & 0xffff
+        chk_sum = 0
+        for i in range(0, len(data), 2):
+            tmp = msg[i] + (msg[i+1] << 8)
+            chk_sum = carry_around_add(chk_sum, tmp)
+            return ~chk_sum & 0xffff
 
 
     def handle(self):
@@ -113,7 +113,7 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
 
 def main():
     """
-    Main method
+    ain method
 
     """
 
