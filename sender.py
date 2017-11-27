@@ -69,9 +69,10 @@ import socket
 import sys
 
 HOST, PORT = "localhost", 9999
-string = "Test\n".encode()
+string = "Test\x00\x00\x00\x00".encode()
+#string = "Test\n".encode()
 
-test_head = Header(b'\x00\x00\x00\x02', checksum(string).to_bytes(2, byteorder='big'))
+test_head = Header(b'\x00\x00\x00\x01', checksum(string).to_bytes(2, byteorder='big'))
 
 test_head.mark_eot()
 
