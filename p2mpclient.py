@@ -118,13 +118,15 @@ def rdt_send(header, hostname, port, data):
 def ticker():
     """
     """
-    global timed_out
+    global timed_out, server_counter, servers_amount
     life = TIMEOUT
 
     while(life > 0):
         print("LIFE: " + str(life))
         print("SERVER_COUNTER: " + str(server_counter))
         print("SERVER_WHAT: " + str(servers_amount))
+        if(server_counter == servers_amount):
+            return
         time.sleep(1)
         life -= 1
 
@@ -137,6 +139,9 @@ def controller(servers, port, file, MSS):
     servers_amount = len(servers)
     seq_counter = 0
     first = True
+
+    for h in servers:
+        server_dict[h] = False
 
     while(data != ""):
 
@@ -155,25 +160,21 @@ def controller(servers, port, file, MSS):
         server_counter = 0
         timed_out = False
 
+        thread_list = []
+
         for hostname in servers:
             print("HOSTNAME: " + hostname)
-            if first:
-                server_dict[hostname] = False
             if server_dict[hostname]:
+                print("HEREJFKDJFKJD")
                 continue
             
 
             t = threading.Thread(target=rdt_send, args=[header, hostname, port, data])
             t.daemon = True
             t.start()
+            thread_list.append(t)
 
-        t = threading.Thread(target=ticker) # Starts timeout timer
-        t.daemon = True
-        t.start()
-
-        first = False
-        while not timed_out and (server_counter != servers_amount):   # Loops until either the servers all acked or it times out
-            pass
+        ticker()
 
         print("OUT LOOP")
         print("TIMED OUT: " + str(timed_out))
@@ -182,7 +183,8 @@ def controller(servers, port, file, MSS):
             continue
         print("DIDN'T TIME OUT")
 
-        first = True    # Resets dictionary to falses
+        for h in servers:
+            server_dict[h] = False
         data = file.read(MSS)   # Reads next line
         seq_counter += 1
         server_counter = 0
