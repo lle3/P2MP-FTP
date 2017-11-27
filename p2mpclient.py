@@ -15,6 +15,7 @@ server_counter = 0
 server_dict = {}
 lock = threading.Lock()
 timed_out = False
+sleep_time = .01
 
 class Header():
     """
@@ -76,6 +77,20 @@ def checksum(d):
         chk_sum = bit_add(chk_sum, tmp)
         return ~chk_sum & 0xffff
 
+class StoppableThread(threading.Thread):
+    """Thread class with a stop() method. The thread itself has to check
+    regularly for the stopped() condition."""
+
+    def __init__(self, t=None, a=()):
+        super(StoppableThread, self).__init__(target = t, args=a)
+        self._stop_event = threading.Event()
+
+    def stop(self):
+        self._stop_event.set()
+
+    def stopped(self):
+        return self._stop_event.is_set()
+
 def rdt_send(header, hostname, port, data):
     """
     Transfers data to P2MP-FTP servers
@@ -85,8 +100,6 @@ def rdt_send(header, hostname, port, data):
 
     # SOCK_DGRAM is the socket type to use for UDP sockets
 
-    print("HOST STARTED: " + hostname)
-
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     try:
@@ -94,22 +107,30 @@ def rdt_send(header, hostname, port, data):
         # Instead, data is directly sent to the recipient via sendto().
         segment = header.to_bits()
         segment.extend(data.encode())
+
+        # print("HOSTNAME: " + hostname)
+        # print("PORT: " + str(port))
+        # print("segment: " + str(segment))
+        # print("HEADER SENT: " + str(header.get_seq_num()))
         sock.sendto(segment, (hostname, port))
+        # print("DATA SENT: " + data)
         received = sock.recv(1024)
 
-        print("Received: {}".format(bytearray(received)))
+        # print("Received: {}".format(bytearray(received)))
 
         seq_num, field_1, field_2 = struct.unpack(">LHH", received)
 
-        print("seq_num: " + str(seq_num))
-        print("field_1: " + str(field_1))
-        print("field_2: " + str(field_2))
+        # print("seq_num: " + str(seq_num))
+        # print("field_1: " + str(field_1))
+        # print("field_2: " + str(field_2))
 
         if seq_num == seq_counter:
+            print("CORRECT ACK: " + str(seq_num))
             with lock:
                 server_counter += 1
                 server_dict[hostname] = True
-                print("HIT")
+        else:
+            print("INCORRECT ACK: " + str(seq_num))
     finally:
         sock.close()
 
@@ -118,24 +139,22 @@ def rdt_send(header, hostname, port, data):
 def ticker():
     """
     """
-    global timed_out, server_counter, servers_amount
+    global timed_out, server_counter, servers_amount, sleep_time
     life = TIMEOUT
 
     while(life > 0):
         print("LIFE: " + str(life))
-        print("SERVER_COUNTER: " + str(server_counter))
-        print("SERVER_WHAT: " + str(servers_amount))
         if(server_counter == servers_amount):
             return
-        time.sleep(1)
+        time.sleep(sleep_time)
         life -= 1
 
-    print("TIMEOUT")
     timed_out = True
 
 def controller(servers, port, file, MSS):
     global server_counter, seq_counter, server_dict, timed_out, servers_amount
     data = file.read(MSS)
+
     servers_amount = len(servers)
     seq_counter = 0
     first = True
@@ -163,25 +182,22 @@ def controller(servers, port, file, MSS):
         thread_list = []
 
         for hostname in servers:
-            print("HOSTNAME: " + hostname)
             if server_dict[hostname]:
-                print("HEREJFKDJFKJD")
                 continue
-            
-
-            t = threading.Thread(target=rdt_send, args=[header, hostname, port, data])
+            t = StoppableThread(t=rdt_send, a=[header, hostname, port, data])
             t.daemon = True
             t.start()
             thread_list.append(t)
 
         ticker()
 
-        print("OUT LOOP")
-        print("TIMED OUT: " + str(timed_out))
+        for thread in thread_list:
+            if not thread.stopped:
+                thread.stop()
 
-        if timed_out:   # If it times out, it will not skip below so it doesn't set up for the next segment
+        if timed_out:
+            print("Timeout, sequence number = " + str(seq_counter))
             continue
-        print("DIDN'T TIME OUT")
 
         for h in servers:
             server_dict[h] = False
@@ -193,14 +209,8 @@ if __name__ == "__main__":
     """
     Main method
     """
-
     try:
         SERVERS, PORT, F_NAME, MSS = sys.argv[1:-3], int(sys.argv[-3]), sys.argv[-2], int(sys.argv[-1])
-        print("SERVERS: " + str(SERVERS))
-        print("PORT: " + str(PORT))
-        print("F_NAME: " + F_NAME)
-        print("MSS: " + str(MSS))
-        print("LENGTH: " + str(len(SERVERS)) + "\n")
     except:
         print("Error in command line arguments.\
                 \nShould be in the form 'p2mpclient server-1 server-2 server-3 server-port# file-name MSS\n")
