@@ -32,6 +32,8 @@ class Header():
         self._checksum = bytearray(checksum)
         # 16-bit field, indicates that this is a data packet
         self._field = bytearray(b'\x55\x55')
+        # EOT
+        self._eot = bytearray(b'\x00\x00')
 
     # Returns sequence number
     def get_seq_num(self):
@@ -40,22 +42,23 @@ class Header():
     # Returns checksum
     def get_checksum(self):
         return self._checksum
+
+    # Marks EOT
+    def mark_eot(self):
+        self._eot = bytearray(b'\x00\x04')
     
     # Returns string of header
     def to_bits(self):
         bits = bytearray()
-        print(bits)
         bits.append(self._seq_num[0])
         bits.append(self._seq_num[1])
         bits.append(self._seq_num[2])
         bits.append(self._seq_num[3])
-        print(bits)
         bits.append(self._checksum[0])
         bits.append(self._checksum[1])
-        print(bits)
         bits.append(self._field[0])
         bits.append(self._field[1])
-        print(bits)
+        bits.extend(self._eot)
         return bits
 
 
@@ -66,9 +69,11 @@ import socket
 import sys
 
 HOST, PORT = "localhost", 9999
-string = "This is a test".encode()
+string = "Test\n".encode()
 
-test_head = Header(b'\x00\x00\x00\x00', checksum(string).to_bytes(2, byteorder='big'))
+test_head = Header(b'\x00\x00\x00\x02', checksum(string).to_bytes(2, byteorder='big'))
+
+test_head.mark_eot()
 
 # SOCK_DGRAM is the socket type to use for UDP sockets
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

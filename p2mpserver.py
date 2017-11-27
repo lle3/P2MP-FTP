@@ -29,6 +29,10 @@ last_seq = -1
 # File for writing
 f = None
 
+# End of transmission
+EOT = 4
+
+
 
 def bit_add(num1, num2):
     """
@@ -76,13 +80,9 @@ class ACK():
         """
 
         bits = bytearray()
-        print(bits)
         bits.extend(self._seq_num)
-        print(bits)
         bits.extend(self._field_1)
-        print(bits)
         bits.extend(self._field_2)
-        print(bits)
         return bits
 
 
@@ -101,13 +101,14 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
 
         print(data)
 
-        seq_num, chk_sum, data_type, msg = struct.unpack(">LHH%ds" % (len(data) - 8), data)
+        seq_num, chk_sum, data_type, eot, msg = struct.unpack(">LHHH%ds" % (len(data) - 10), data)
 
         socket = self.request[1]
 
         print("seq: " + str(seq_num) + "\n")
         print("check: " + str(chk_sum) + "\n")
         print("type: " + str(data_type) + "\n")
+        print("eot: " + str(eot) + "\n")
         print("msg: " + str(msg) + "\n")
 
         if (random.uniform(0,1) > prob):
@@ -119,6 +120,13 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
 
                 ack = ACK((last_seq).to_bytes(4, byteorder='big'))
                 socket.sendto(ack.to_bits(), self.client_address)
+
+                if (eot == EOT):
+                    f.close()
+                    sys.exit()
+
+        else:
+            print("Packet loss, sequence number = " + str(seq_num) + "\n")
 
 
 def main():
