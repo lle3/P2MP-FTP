@@ -122,8 +122,10 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
                 socket.sendto(ack.to_bits(), self.client_address)
 
                 if (eot == EOT):
+                    f.write(msg.decode("utf-8").rstrip('\0'))
                     f.close()
                     sys.exit()
+
 
         else:
             print("Packet loss, sequence number = " + str(seq_num) + "\n")
