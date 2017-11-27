@@ -116,13 +116,16 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
                 global last_seq
                 if (seq_num == (last_seq + 1)):
                     last_seq += 1
-                    f.write(msg.decode("utf-8"))
+                    if (eot == EOT):
+                        f.write(msg.decode("utf-8").rstrip('\0'))
+                    else:
+                        f.write(msg.decode("utf-8"))
 
                 ack = ACK((last_seq).to_bytes(4, byteorder='big'))
                 socket.sendto(ack.to_bits(), self.client_address)
 
+                # Couldn't figure out how not to check again
                 if (eot == EOT):
-                    f.write(msg.decode("utf-8").rstrip('\0'))
                     f.close()
                     sys.exit()
 
