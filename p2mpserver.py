@@ -1,4 +1,6 @@
-import sys, socketserver, struct
+import sys, socketserver, struct, random
+
+
 
 __author__ = "Stephen Worley"
 __credits__ = ["Stephen Worley", "Louis Le"]
@@ -7,17 +9,48 @@ __maintainer__ = "Stephen Worley"
 __email__ = "sworley1995@gmail.com"
 __status__ = "Development"
 
+
+
 # Port number
-PORT = 0
+port = 0
 
 # File store name
-F_NAME = ""
+f_name = ""
 
 # Probability of loss
-PROB = 0
+prob = 0.0
 
 # Host for server
 HOST = "localhost"
+
+# Last received sequence number
+last_seq = -1
+
+# File for writing
+f = None
+
+
+def bit_add(num1, num2):
+    """
+    Adds bytes together with carryover
+    """
+
+    num_sum = num1 + num2
+    return (num_sum & 0xffff) + (num_sum >> 16)
+
+
+def checksum(d):
+    """
+    Computes checksum
+    """
+
+    chk_sum = 0
+    for i in range(0, len(d), 2):
+        tmp = d[i] + (d[i+1] << 8)
+        chk_sum = bit_add(chk_sum, tmp)
+        return ~chk_sum & 0xffff
+
+
 
 class ACK():
     """
@@ -31,26 +64,27 @@ class ACK():
         self._field_1 = bytearray(b'\x00\x00')
         # 16-bit field indicates that it is an ACK packe
         self._field_2 = bytearray(b'\xAA\xAA')
-    # Returns sequence Number
+
+
     def get_seq_num(self):
         return self._seq_num
 
-    # Return string of ACK segment
+
     def to_bits(self):
+        """
+        Converts header to bytearray
+        """
+
         bits = bytearray()
         print(bits)
-        bits.append(self._seq_num[0])
-        bits.append(self._seq_num[1])
-        bits.append(self._seq_num[2])
-        bits.append(self._seq_num[3])
+        bits.extend(self._seq_num)
         print(bits)
-        bits.append(self._field_1[0])
-        bits.append(self._field_1[1])
+        bits.extend(self._field_1)
         print(bits)
-        bits.append(self._field_2[0])
-        bits.append(self._field_2[1])
+        bits.extend(self._field_2)
         print(bits)
         return bits
+
 
 
 class MyUDPHandler(socketserver.BaseRequestHandler):
@@ -59,21 +93,32 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
     """
 
     def handle(self):
+        """
+        Request handler method
+        """
+
         data = self.request[0].strip()
 
-        seq_num, checksum, data_type = struct.unpack('>LHH', data)
-
-        socket = self.request[1]
-        print("seq: " + str(seq_num) + "\n")
-        print("check: " + str(checksum) + "\n")
-        print("type: " + str(data_type) + "\n")
         print(data)
 
-        # TODO: For testing, just inc
-        seq_num = seq_num + 1
-        ack = ACK((seq_num).to_bytes(4, byteorder='big'))
-        socket.sendto(ack.to_bits(), self.client_address)
+        seq_num, chk_sum, data_type, msg = struct.unpack(">LHH%ds" % (len(data) - 8), data)
 
+        socket = self.request[1]
+
+        print("seq: " + str(seq_num) + "\n")
+        print("check: " + str(chk_sum) + "\n")
+        print("type: " + str(data_type) + "\n")
+        print("msg: " + str(msg) + "\n")
+
+        if (random.uniform(0,1) > prob):
+            if (chk_sum == checksum(msg)):
+                global last_seq
+                if (seq_num == (last_seq + 1)):
+                    last_seq += 1
+                    f.write(msg.decode("utf-8"))
+
+                ack = ACK((last_seq).to_bytes(4, byteorder='big'))
+                socket.sendto(ack.to_bits(), self.client_address)
 
 
 def main():
@@ -82,17 +127,33 @@ def main():
 
     """
 
+    global port
+    global f_name
+    global prob
+    global f
+
     try:
-        PORT = int(sys.argv[1])
-        F_NAME = sys.argv[2]
-        PROB = int(sys.argv[3])
+        port = int(sys.argv[1])
+        f_name = sys.argv[2]
+        prob = float(sys.argv[3])        
 
     except:
         print("Error in command line arguments.\
                 \nShould be in the form 'p2mpserver port# file-name p'\n")
 
-    server = socketserver.UDPServer((HOST, PORT), MyUDPHandler)
-    server.serve_forever()
+    try:
+        f = open(f_name, 'w')
+
+    except IOError:
+        print("Error opening file: " + f_name + "\n")
+
+
+    try:
+        server = socketserver.UDPServer((HOST, port), MyUDPHandler)
+        server.serve_forever()
+    except(KeyboardInterrupt, SystemExit):
+        f.close()
+        server.shutdown()
 
 
 
