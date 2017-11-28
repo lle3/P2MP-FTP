@@ -1,4 +1,4 @@
-import sys, socketserver, struct, threading, time, socket
+import sys, socketserver, struct, threading, time, socket, select
 
 __author__ = "Louis Le"
 __credits__ = ["Stephen Worley", "Louis Le"]
@@ -101,7 +101,7 @@ def rdt_send(header, hostname, port, data):
     # SOCK_DGRAM is the socket type to use for UDP sockets
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
+    sock.setblocking(0)
     try:
         # As you can see, there is no connect() call; UDP has no connections.
         # Instead, data is directly sent to the recipient via sendto().
@@ -114,23 +114,25 @@ def rdt_send(header, hostname, port, data):
         # print("HEADER SENT: " + str(header.get_seq_num()))
         sock.sendto(segment, (hostname, port))
         # print("DATA SENT: " + data)
-        received = sock.recv(1024)
-
+        
+        ready = select.select([sock], [], [], 1)
+        if(ready[0]):
+            received = sock.recv(1024)
         # print("Received: {}".format(bytearray(received)))
 
-        seq_num, field_1, field_2 = struct.unpack(">LHH", received)
+            seq_num, field_1, field_2 = struct.unpack(">LHH", received)
 
-        # print("seq_num: " + str(seq_num))
-        # print("field_1: " + str(field_1))
-        # print("field_2: " + str(field_2))
+            # print("seq_num: " + str(seq_num))
+            # print("field_1: " + str(field_1))
+            # print(x`"field_2: " + str(field_2))
 
-        if seq_num == seq_counter:
-            print("CORRECT ACK: " + str(seq_num))
-            with lock:
-                server_counter += 1
-                server_dict[hostname] = True
-        else:
-            print("INCORRECT ACK: " + str(seq_num))
+            if seq_num == seq_counter:
+                print("CORRECT ACK: " + str(seq_num))
+                with lock:
+                    server_counter += 1
+                    server_dict[hostname] = True
+            else:
+                print("INCORRECT ACK: " + str(seq_num))
     finally:
         sock.close()
 
@@ -158,11 +160,12 @@ def controller(servers, port, file, MSS):
     servers_amount = len(servers)
     seq_counter = 0
     first = True
+    ended = False
 
     for h in servers:
         server_dict[h] = False
 
-    while(data != ""):
+    while(data != "" or not ended):
 
         d = data.encode()
 
@@ -174,6 +177,7 @@ def controller(servers, port, file, MSS):
             for i in range(space):
                 temp.extend(b"\x00")
             data = temp.decode()
+            ended = True
             header = Header((seq_counter).to_bytes(4, byteorder="big"), checksum(d).to_bytes(2, byteorder="big"), b'\x00\x04')
 
         server_counter = 0
@@ -194,7 +198,7 @@ def controller(servers, port, file, MSS):
         for thread in thread_list:
             if not thread.stopped:
                 thread.stop()
-
+        
         if timed_out:
             print("Timeout, sequence number = " + str(seq_counter))
             continue
@@ -202,8 +206,13 @@ def controller(servers, port, file, MSS):
         for h in servers:
             server_dict[h] = False
         data = file.read(MSS)   # Reads next line
+        if(len(data) == 0 and not ended):
+            data = str(b"\x00\x00")
+            print("data: " + data)
         seq_counter += 1
         server_counter = 0
+
+
 
 if __name__ == "__main__":
     """
