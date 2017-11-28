@@ -1,4 +1,4 @@
-import sys, socketserver, struct, threading, time, socket
+import sys, socketserver, struct, threading, time, socket, random, select
 
 __author__ = "Louis Le"
 __credits__ = ["Stephen Worley", "Louis Le"]
@@ -7,7 +7,7 @@ __maintainer__ = "Louis Le"
 __email__ = "lle3@ncsu.edu"
 __status__ = "Development"
 
-TIMEOUT = 10
+TIMEOUT = 5
 
 servers_amount = 0
 seq_counter = 0
@@ -16,6 +16,7 @@ server_dict = {}
 lock = threading.Lock()
 timed_out = False
 sleep_time = .01
+sema = None
 
 class Header():
     """
@@ -54,8 +55,6 @@ class Header():
         bits.extend(self._EOT)
         return bits
 
-class ThreadedUDPServer(socketserver.ThreadingMixIn, socketserver.UDPServer):
-    pass
 
 def bit_add(num1, num2):
     """
@@ -91,16 +90,16 @@ class StoppableThread(threading.Thread):
     def stopped(self):
         return self._stop_event.is_set()
 
-def rdt_send(header, hostname, port, data):
+def rdt_send(sock, header, hostname, port, data):
     """
     Transfers data to P2MP-FTP servers
     Provides data from the file on a byte basis.
     """
-    global servers_amount, server_dict, server_counter
+    global servers_amount, server_dict, server_counter, sema
+
 
     # SOCK_DGRAM is the socket type to use for UDP sockets
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     try:
         # As you can see, there is no connect() call; UDP has no connections.
@@ -111,28 +110,31 @@ def rdt_send(header, hostname, port, data):
         # print("HOSTNAME: " + hostname)
         # print("PORT: " + str(port))
         # print("segment: " + str(segment))
-        # print("HEADER SENT: " + str(header.get_seq_num()))
+        print("HEADER SENT: " + str(bytes(header.get_seq_num())))
         sock.sendto(segment, (hostname, port))
-        # print("DATA SENT: " + data)
+        print("DATA SENT: " + str(random.randint(0,100)))
+
         received = sock.recv(1024)
 
         # print("Received: {}".format(bytearray(received)))
+        if received:
+            seq_num, field_1, field_2 = struct.unpack(">LHH", received)
 
-        seq_num, field_1, field_2 = struct.unpack(">LHH", received)
+            # print("seq_num: " + str(seq_num))
+            # print("field_1: " + str(field_1))
+            # print("field_2: " + str(field_2))
 
-        # print("seq_num: " + str(seq_num))
-        # print("field_1: " + str(field_1))
-        # print("field_2: " + str(field_2))
+            if seq_num == seq_counter:
+                print("CORRECT ACK: " + str(seq_num))
+                with lock:
+                    server_counter += 1
+                    server_dict[hostname] = True
+            else:
+                print("INCORRECT ACK: " + str(seq_num))
 
-        if seq_num == seq_counter:
-            print("CORRECT ACK: " + str(seq_num))
-            with lock:
-                server_counter += 1
-                server_dict[hostname] = True
-        else:
-            print("INCORRECT ACK: " + str(seq_num))
     finally:
         sock.close()
+        sock = None
 
 #checksum():
 
@@ -148,21 +150,25 @@ def ticker():
             return
         time.sleep(sleep_time)
         life -= 1
-
-    timed_out = True
+    with lock:
+        timed_out = True
 
 def controller(servers, port, file, MSS):
-    global server_counter, seq_counter, server_dict, timed_out, servers_amount
+    global server_counter, seq_counter, server_dict, timed_out, servers_amount, sema
     data = file.read(MSS)
 
     servers_amount = len(servers)
     seq_counter = 0
     first = True
+    ended = False
 
     for h in servers:
         server_dict[h] = False
 
-    while(data != ""):
+    made_threads = False
+    thread_list = {}
+
+    while(data != "" or not ended):
 
         d = data.encode()
 
@@ -174,36 +180,56 @@ def controller(servers, port, file, MSS):
             for i in range(space):
                 temp.extend(b"\x00")
             data = temp.decode()
+            ended = True
             header = Header((seq_counter).to_bytes(4, byteorder="big"), checksum(d).to_bytes(2, byteorder="big"), b'\x00\x04')
 
         server_counter = 0
         timed_out = False
 
-        thread_list = []
 
-        for hostname in servers:
-            if server_dict[hostname]:
-                continue
-            t = StoppableThread(t=rdt_send, a=[header, hostname, port, data])
-            t.daemon = True
-            t.start()
-            thread_list.append(t)
+        if (not made_threads):
+            thread_list = {}
+            for hostname in servers:
+                thread_list[hostname] = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                print(thread_list[hostname])
+                t = StoppableThread(t=rdt_send, a=[thread_list[hostname], header, hostname, port, data])
+                t.daemon = True
+                t.start()
+            made_threads = True
 
+        for stuff in thread_list:
+            print("socket:" + stuff)
+
+        print("threads: " + str(threading.active_count()))
         ticker()
 
-        for thread in thread_list:
-            if not thread.stopped:
-                thread.stop()
+        with lock:
+            if timed_out:
+                doof = False
+                print("Timeout, sequence number = " + str(seq_counter))
+                for key, value in server_dict.items():
+                    if (not value):
+                        doof = True
+                        segment = header.to_bits()
+                        segment.extend(data.encode())
+                        for k, val in thread_list.items():
+                            print(k + ":" + str(val))
+                        if thread_list[key] != None:
+                            thread_list[key].sendto(segment, (key, port))
+                if doof:
+                    continue
 
-        if timed_out:
-            print("Timeout, sequence number = " + str(seq_counter))
-            continue
+
 
         for h in servers:
             server_dict[h] = False
         data = file.read(MSS)   # Reads next line
+        if(len(data) == 0 and not ended):
+            data = str(b"\x00\x00")
+            print("data: " + data)
         seq_counter += 1
         server_counter = 0
+        made_threads = False
 
 if __name__ == "__main__":
     """
