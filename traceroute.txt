@@ -1,0 +1,31 @@
+traceroute to ec2-18-221-133-82.us-east-2.compute.amazonaws.com (18.221.133.82), 30 hops max, 60 byte packets
+ 1  vl2401-smdf-csdis-aruba-c4k-1.ncstate.net (10.139.64.2)  1.352 ms  1.617 ms  1.822 ms
+ 2  * smdf-cscore-c6k-1-NCSU-1.ncstate.net (10.132.11.32)  2.223 ms *
+ 3  smdf-bbfusion-c6k-1-NCSU-1.ncstate.net (10.132.11.2)  2.154 ms  2.320 ms  2.509 ms
+ 4  cmdf-bbcore-c6k-1--smdf-bbfusion-c6k-1.ncstate.net (10.250.1.45)  2.484 ms  2.461 ms  2.438 ms
+ 5  ncsugw-x-cmdfcore.ncstate.net (152.1.6.254)  2.392 ms  2.367 ms  2.345 ms
+ 6  * * *
+ 7  * * *
+ 8  * * *
+ 9  * * *
+10  * * *
+11  * * *
+12  * * *
+13  * * *
+14  * * *
+15  * * *
+16  * * *
+17  * * *
+18  * * *
+19  * * *
+20  * * *
+21  * * *
+22  * * *
+23  * * *
+24  * * *
+25  * * *
+26  * * *
+27  * * *
+28  * * *
+29  * * *
+30  * * *
