@@ -1,16 +1,16 @@
 #!/bin/bash
 
-SERVERS=("18.217.114.37" "18.217.64.84" "52.15.69.135" "13.58.26.68" "18.217.111.251")
+SERVERS=("18.221.133.82" "18.217.96.4" "18.216.98.166" "13.58.28.214" "18.217.86.137")
 FILE="file.txt"
 MSS=500
 
 
 # TASK 1
 
-for i in `seq 1 1`;
+for i in `seq 1 5`;
 do
     result=0
-    for j in `seq 1 1`;
+    for j in `seq 1 5`;
     do
         SECONDS=0
         python ./p2mpclient.py ${SERVERS[@]:0:$i} 7735 $FILE $MSS
