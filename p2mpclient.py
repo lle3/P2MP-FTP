@@ -7,15 +7,13 @@ __maintainer__ = "Louis Le"
 __email__ = "lle3@ncsu.edu"
 __status__ = "Development"
 
-TIMEOUT = 10
-
 servers_amount = 0
 seq_counter = 0
 server_counter = 0
 server_dict = {}
 lock = threading.Lock()
 timed_out = False
-sleep_time = .01
+sleep_time = 3
 
 class Header():
     """
@@ -91,67 +89,79 @@ class StoppableThread(threading.Thread):
     def stopped(self):
         return self._stop_event.is_set()
 
-def rdt_send(header, hostname, port, data):
+
+def send_packets(sock, servers, port, header, data):
+    for server in servers:
+        if(not server_dict[server]):
+            # As you can see, there is no connect() call; UDP has no connections.
+            # Instead, data is directly sent to the recipient via sendto().
+            segment = header.to_bits()
+            segment.extend(data.encode())
+
+            sock.sendto(segment, (server, port))
+            print("SENT: " + str(bytes(header.get_seq_num())))
+
+def waiter(sock, servers, port):
+    global server_counter, server_dict, seq_counter
+    while(True):
+        data, address = sock.recvfrom(1024)
+        seq_num, field_1, field_2 = struct.unpack(">LHH", data)
+        try:
+            hostname = socket.gethostbyaddr(address[0])[0]
+        except:
+            hostname = address[0]
+        if (seq_num == seq_counter and not server_dict[str(hostname)]):
+            print("CORRECT ACK: " + str(seq_num))
+            with lock:
+                server_counter += 1
+                server_dict[hostname] = True
+            print("SERVER_COUNTER: " + str(server_counter))
+            print("SERVER_DICT: " + str(server_dict))
+            print("SEQ_COUNTER: " + str(seq_counter))
+        else:
+            print("INCORRECT ACK: " + str(seq_num))
+            sys.exit()
+
+
+def ticker():
+    """
+    """
+    global timed_out, sleep_time
+    time.sleep(sleep_time)
+
+    timed_out = True
+
+def rdt_send(sock, servers, port, header,data):
     """
     Transfers data to P2MP-FTP servers
     Provides data from the file on a byte basis.
     """
     global servers_amount, server_dict, server_counter
 
-    # SOCK_DGRAM is the socket type to use for UDP sockets
+    t1 = StoppableThread(t=waiter, a=[sock, servers, port])
+    t1.daemon = True
+    t1.start()
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    t2 = StoppableThread(t=send_packets, a=[sock, servers, port, header, data])
+    t2.daemon = True
+    t2.start()
 
-    try:
-        # As you can see, there is no connect() call; UDP has no connections.
-        # Instead, data is directly sent to the recipient via sendto().
-        segment = header.to_bits()
-        segment.extend(data.encode())
+    t3 = StoppableThread(t=ticker)
+    t3.daemon = True
+    t3.start()
 
-        # print("HOSTNAME: " + hostname)
-        # print("PORT: " + str(port))
-        # print("segment: " + str(segment))
-        # print("HEADER SENT: " + str(header.get_seq_num()))
-        sock.sendto(segment, (hostname, port))
-        # print("DATA SENT: " + data)
-        received = sock.recv(1024)
+    while(not timed_out and servers_amount != server_counter):
+        pass
 
-        # print("Received: {}".format(bytearray(received)))
+    
 
-        seq_num, field_1, field_2 = struct.unpack(">LHH", received)
-
-        # print("seq_num: " + str(seq_num))
-        # print("field_1: " + str(field_1))
-        # print("field_2: " + str(field_2))
-
-        if seq_num == seq_counter:
-            print("CORRECT ACK: " + str(seq_num))
-            with lock:
-                server_counter += 1
-                server_dict[hostname] = True
-        else:
-            print("INCORRECT ACK: " + str(seq_num))
-    finally:
-        sock.close()
+    t1.stop()
+    t2.stop()
+    t3.stop()
 
 #checksum():
 
-def ticker():
-    """
-    """
-    global timed_out, server_counter, servers_amount, sleep_time
-    life = TIMEOUT
-
-    while(life > 0):
-        print("LIFE: " + str(life))
-        if(server_counter == servers_amount):
-            return
-        time.sleep(sleep_time)
-        life -= 1
-
-    timed_out = True
-
-def controller(servers, port, file, MSS):
+def controller(sock, servers, port, file, MSS):
     global server_counter, seq_counter, server_dict, timed_out, servers_amount
     data = file.read(MSS)
 
@@ -163,7 +173,6 @@ def controller(servers, port, file, MSS):
         server_dict[h] = False
 
     while(data != ""):
-
         d = data.encode()
 
         if len(data) == MSS:
@@ -176,34 +185,18 @@ def controller(servers, port, file, MSS):
             data = temp.decode()
             header = Header((seq_counter).to_bytes(4, byteorder="big"), checksum(d).to_bytes(2, byteorder="big"), b'\x00\x04')
 
-        server_counter = 0
-        timed_out = False
+        rdt_send(sock, servers, port, header, data)
 
-        thread_list = []
-
-        for hostname in servers:
-            if server_dict[hostname]:
-                continue
-            t = StoppableThread(t=rdt_send, a=[header, hostname, port, data])
-            t.daemon = True
-            t.start()
-            thread_list.append(t)
-
-        ticker()
-
-        for thread in thread_list:
-            if not thread.stopped:
-                thread.stop()
-
-        if timed_out:
+        if(servers_amount == server_counter):
+            for h in servers:
+                server_dict[h] = False
+            data = file.read(MSS)   # Reads next line
+            seq_counter += 1
+            server_counter = 0
+        else:
             print("Timeout, sequence number = " + str(seq_counter))
-            continue
-
-        for h in servers:
-            server_dict[h] = False
-        data = file.read(MSS)   # Reads next line
-        seq_counter += 1
-        server_counter = 0
+            timed_out = False
+            # time.sleep(5)
 
 if __name__ == "__main__":
     """
@@ -222,4 +215,6 @@ if __name__ == "__main__":
         print("File does not exit: " + F_NAME + "\n")
         sys.exit()
 
-    controller(SERVERS, PORT, file, MSS)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    controller(sock, SERVERS, PORT, file, MSS)
